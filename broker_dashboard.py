@@ -5,7 +5,7 @@ import requests
 from wordcloud import WordCloud, STOPWORDS
 
 # -----------------------------------------------------------------------------
-# DATA SOURCES
+# CONSTANTS & DATA SOURCES
 # -----------------------------------------------------------------------------
 BROKER_CSV_URL = "https://raw.githubusercontent.com/JakeWillson13/freight_fraud/main/broker_authorities_last7y_trimmed.csv.gz"
 TXT_URL        = "https://raw.githubusercontent.com/JakeWillson13/freight_fraud/main/freight_fraud_articles.txt"
@@ -20,26 +20,23 @@ ACTIONS        = [
 ]
 
 # -----------------------------------------------------------------------------
-# DATA HELPERS  (cached for fast reloads)
+# CACHE HELPERS
 # -----------------------------------------------------------------------------
 @st.cache_data
 def load_broker_data() -> pd.DataFrame:
-    df = pd.read_csv(BROKER_CSV_URL, compression="gzip", parse_dates=[DATE_COL])
-    return df
+    return pd.read_csv(BROKER_CSV_URL, compression="gzip", parse_dates=[DATE_COL])
 
 # -----------------------------------------------------------------------------
-# SUMMARY + VISUAL FUNCTIONS
+# AGGREGATION FUNCTIONS
 # -----------------------------------------------------------------------------
 
 def summarize(df: pd.DataFrame, freq: str, start_date: pd.Timestamp) -> pd.DataFrame:
-    df_filt = df[df[DATE_COL] >= start_date]
     return (
-        df_filt
+        df[df[DATE_COL] >= start_date]
         .groupby([pd.Grouper(key=DATE_COL, freq=freq), ACTION_COL])
         .size()
         .unstack(fill_value=0)[[c for c in ACTIONS if c in df.columns or c in ACTIONS]]
     )
-
 
 def monthly_summary_last12(df: pd.DataFrame) -> pd.DataFrame:
     cutoff = pd.Timestamp.today() - pd.DateOffset(years=1)
@@ -50,16 +47,17 @@ def monthly_summary_last12(df: pd.DataFrame) -> pd.DataFrame:
         .unstack(fill_value=0)
     )
 
-
 def yoy_pct_last7(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["YEAR"] = df[DATE_COL].dt.year
-    years = sorted(df["YEAR"].unique())[-7:]
-    df = df[df["YEAR"].isin(years)]
+    tmp = df.copy()
+    tmp["YEAR"] = tmp[DATE_COL].dt.year
+    yrs = sorted(tmp["YEAR"].unique())[-7:]
     return (
-        df.groupby(["YEAR", ACTION_COL]).size().unstack(fill_value=0).pct_change() * 100
+        tmp[tmp["YEAR"].isin(yrs)]
+        .groupby(["YEAR", ACTION_COL])
+        .size()
+        .unstack(fill_value=0)
+        .pct_change() * 100
     ).round(2)
-
 
 # -----------------------------------------------------------------------------
 # PLOT HELPERS
@@ -76,7 +74,6 @@ def line_plot(df: pd.DataFrame, title: str, ylabel: str):
     ax.legend()
     st.pyplot(fig)
 
-
 def stacked_bar(df: pd.DataFrame, title: str):
     fig, ax = plt.subplots(figsize=(10, 5))
     df.plot(kind="bar", stacked=True, ax=ax)
@@ -90,6 +87,9 @@ def stacked_bar(df: pd.DataFrame, title: str):
     )
     st.pyplot(fig)
 
+# -----------------------------------------------------------------------------
+# WORD‑CLOUD
+# -----------------------------------------------------------------------------
 
 def draw_wordcloud():
     text = requests.get(TXT_URL).text
@@ -119,33 +119,38 @@ def draw_wordcloud():
 # -----------------------------------------------------------------------------
 # STREAMLIT LAYOUT
 # -----------------------------------------------------------------------------
+
 st.set_page_config(page_title="Freight Fraud Dashboard", layout="wide")
 st.title("📊 Freight Fraud Dashboard")
 
-# --- Executive Summary -------------------------------------------------------
-with st.expander("🔎 Executive Summary", expanded=True):
-    st.markdown(
-        """
-### What Just Happened?
-- **Sept 2024 Surge:** FMCSA revoked **609** broker authorities—>2× pre‑COVID norm; ~⅓ tied to double‑brokering.
-- **Broker Contraction:** New broker grants fell **38 %** in 2024 and another **46 % YTD 2025** while carrier counts kept climbing.
-- **Fraud Concentration:** *Fourteen counties* now account for **46 %** of fraud‑coded revocations; double‑brokering flags have **quadrupled** since 2021.
-- **Early Enforcement Works:** Revoking within 60 days of complaint averts ≈ **$52 k** in unpaid invoices.
-
-### Call to Action
-- **Shippers & Carriers:** Verify MC numbers daily, require insurance APIs, adopt live load‑tracking.
-- **Brokers:** Invest in identity‑proofing & value‑added services.
-- **Regulators / Load‑boards:** Share fraud telemetry in real time; audit brokers showing 90‑day churn.
-        """,
-        unsafe_allow_html=True,
-    )
-
-# --- DATA --------------------------------------------------------------------
+# --- DATA LOAD ----------------------------------------------------------------
 df_brokers = load_broker_data()
 now       = pd.Timestamp.today().normalize()
 last_5yrs = now - pd.DateOffset(years=5)
 
-# --- Tabs --------------------------------------------------------------------
+# --- EXEC SUMMARY -------------------------------------------------------------
+with st.expander("🔎 Executive Summary", expanded=True):
+    st.markdown(
+        """
+### What Just Happened & Why It Matters 🚨
+- **Sept 2024:** FMCSA revoked **609** broker authorities —> the sharpest spike on record; ~⅓ tied to double‑brokering.
+- **Broker Contraction:** New broker grants plunged **38 %** in 2024 and another **46 % YTD 2025** while carriers keep adding ~5,500 authorities a month.
+- **Fraud Hot‑Spots:** Fourteen counties now generate **46 %** of fraud‑coded revocations; probability a new broker survives 12 months fell from **0.78 → 0.62** (2019‑▶ 2024 cohorts).
+
+### Our Journey 🛠️
+1. **Wrangle:** 1 M+ FMCSA actions (2019‑2025) → isolate 5 key statuses.
+2. **Enrich:** Tag data with 30 trade‑press events (Convoy, Uber Freight layoffs, federal indictments).
+3. **Reveal:** Markov churn & YoY deltas flag structural breaks after the 2022 bond‑hike & Oct 2024 shutdowns.
+
+### Data Sources 📂
+- **FMCSA Motor‑Carrier Census Files** (API): <https://catalog.data.gov/dataset/motor-carrier-registrations-census-files>
+- **30 Google‑News Articles** on broker fraud & freight theft (custom scraper)
+        """,
+        unsafe_allow_html=True,
+    )
+
+# --- TABS ---------------------------------------------------------------------
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Authority Trends",
     "📉 YoY Change",
@@ -153,24 +158,39 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "☁️ Word Cloud",
 ])
 
+# -----------------------------------------------------------------------------
+# TAB 1 – AUTHORITY TRENDS
+# -----------------------------------------------------------------------------
 with tab1:
     st.subheader("Broker Authorities – Last 5 Years")
+    st.markdown("""The stacked bars below trace every **Granted**, **Revoked**, and **Reinstated** broker authority since 2020. Notice the sharp jump in involuntary revocations during late 2024 as fraud enforcement accelerated.""")
     brokers_5y = summarize(df_brokers, "YE", last_5yrs)
     st.dataframe(brokers_5y)
     stacked_bar(brokers_5y, "Broker Authorities – Last 5 Years")
 
+# -----------------------------------------------------------------------------
+# TAB 2 – YOY CHANGE
+# -----------------------------------------------------------------------------
 with tab2:
-    st.subheader("Year‑over‑Year % Change (Last 7 Years)")
+    st.subheader("Year‑over‑Year % Change")
+    st.markdown("""This line plot compares percentage changes year‑over‑year. The **2024 spike** in **Involuntary Revocation** (+29 %) contrasts with a deep slide in **Granted** (‑38 %), signalling a market losing legitimate middle‑men while fraud enforcement tightens.""")
     yoy = yoy_pct_last7(df_brokers)
     st.dataframe(yoy)
     line_plot(yoy, "YoY % Change in Broker Authorities", "% Change")
 
+# -----------------------------------------------------------------------------
+# TAB 3 – MONTHLY SUMMARY
+# -----------------------------------------------------------------------------
 with tab3:
-    st.subheader("Monthly Broker Actions (Last 12 Months)")
+    st.subheader("Monthly Broker Actions – Last 12 Months")
+    st.markdown("""Monitor the **rolling 12‑month** momentum. The decline in new grants persists into 2025, while fraud‑linked revocations remain elevated, underscoring continued volatility in brokerage capacity.""")
     monthly = monthly_summary_last12(df_brokers)
     st.dataframe(monthly)
     line_plot(monthly, "Monthly Broker Authority Actions", "Count")
 
+# -----------------------------------------------------------------------------
+# TAB 4 – WORD CLOUD
+# -----------------------------------------------------------------------------
 with tab4:
     st.subheader("Freight‑Fraud News Word Cloud")
-    draw_wordcloud()
+    st.markdown("""Top news headlines cluster around **double‑brokering**, **revocations**, and industry **
