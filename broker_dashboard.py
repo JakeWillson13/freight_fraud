@@ -122,17 +122,17 @@ last_5yrs  = now - pd.DateOffset(years=5)
 with st.expander("🔎 Executive Summary", expanded=True):
     st.markdown(
         """
-### What Just Happened & Why It Matters 🚨
+### What Just Happened & Why It Matters
 * **Sept 2024:** FMCSA revoked **609** broker authorities — the sharpest spike on record; ~⅓ tied to double‑brokering.
 * **Broker Contraction:** New broker grants plunged **38 %** in 2024 and another **46 % YTD 2025** while carriers keep growing.
 * **Fraud Hot‑Spots:** Fourteen counties now generate **46 %** of fraud‑coded revocations; 12‑month survival probability for new brokers fell from **0.78 → 0.62** (2019→2024 cohorts).
 
-### Our Journey 🛠️
+### Our Journey 
 1. **Wrangle** 1 M+ FMCSA actions (2019‑2025) → isolate key statuses.
 2. **Enrich** census data with 30 Google‑News articles on Convoy, Uber Freight layoffs, and fraud indictments.
 3. **Reveal** structural breaks after the 2022 bond hike & Oct 2024 broker shutdowns.
 
-### Data Sources 📂
+### Data Sources
 * **FMCSA Motor‑Carrier Census API:** <https://catalog.data.gov/dataset/motor-carrier-registrations-census-files>
 * **30 Google‑News Articles** on broker fraud & freight theft (custom scraper)
         """,
